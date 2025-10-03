@@ -1,0 +1,5 @@
+services:
+  server:
+    image: argon/server:latest
+    ports:
+      - "8787:8787"

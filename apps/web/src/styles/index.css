@@ -1,0 +1,8 @@
+/* apps/web/src/styles/index.css */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; background: #0e0f11; }
+body { overflow: hidden; color: #eaeaea; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.prose { font-size: 14px; }
+.mic-pulse { animation: blip 1s infinite alternate; }
+@keyframes blip { from { transform: scale(1); } to { transform: scale(1.06); } }

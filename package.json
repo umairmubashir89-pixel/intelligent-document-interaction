@@ -1,0 +1,25 @@
+{
+  "name": "argon-v2-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "apps/server",
+    "apps/web"
+  ],
+  "scripts": {
+    "install:all": "npm install --workspaces",
+    "build": "npm run build -w apps/server",
+    "start": "npm start -w apps/server",
+    "dev:web": "npm run dev -w apps/web"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.13",
+    "autoprefixer": "^10.4.21",
+    "tailwindcss": "^4.1.13"
+  },
+  "dependencies": {
+    "prismjs": "^1.30.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  }
+}

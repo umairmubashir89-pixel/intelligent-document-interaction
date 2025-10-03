@@ -1,0 +1,16 @@
+:: From repo root
+python run_argon.py   :: (after the changes below)
+
+:: Install PDF.js where it’s used
+cd apps\server
+npm i pdfjs-dist ffmpeg-static
+cd ..\web
+npm i pdfjs-dist
+
+:: (optional) if TypeScript still complains, add the two .d.ts shims shown above
+
+:: Later, to run Whisper on CUDA (only with matching CUDA+cuDNN installed)
+set WHISPER_DEVICE=cuda
+set CUDA_VISIBLE_DEVICES=0
+set CT2_USE_CUDA=1
+python run_argon.py

@@ -1,0 +1,301 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARGON — Chat + RAG</title>
+<style>
+:root{
+  --bg:#0b0f17; --panel:#121826; --muted:#8b98a5; --text:#e6eaf0; --acc:#3b82f6; --chip:#1f2937; --border:#233044;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;margin:0}
+.container{display:grid;grid-template-columns:300px 1fr; min-height:100vh}
+.sidebar{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.sidebar header{padding:16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.sidebar header h1{font-size:18px;margin:0 6px 0 0}
+.sidebar .new{margin:12px;border:1px dashed var(--border);border-radius:10px;padding:10px 12px;text-align:center;color:var(--muted);cursor:pointer}
+.chatlist{flex:1; overflow:auto; padding:8px}
+.chatitem{padding:10px;border-radius:10px; cursor:pointer; color:var(--text)}
+.chatitem:hover{background:#0f1524}
+.chatitem.active{background:#142038}
+.main{display:flex; flex-direction:column}
+.topbar{display:flex;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.2);position:sticky;top:0}
+select, input, button{font:inherit}
+select, input[type="text"]{background:#0d1423;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 12px}
+button{background:var(--acc);color:white;border:none;border-radius:10px;padding:9px 14px;cursor:pointer}
+button.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.badge{background:var(--chip);color:var(--muted);padding:4px 8px;border-radius:100px;font-size:12px}
+.chat{flex:1; overflow:auto; padding:16px}
+.msg{max-width:900px;margin:0 auto 14px auto;display:flex;gap:10px}
+.bubble{background:#0e1627;border:1px solid var(--border); padding:12px 14px; border-radius:12px; white-space:pre-wrap}
+.user .bubble{background:#18263e}
+.meta{font-size:12px;color:var(--muted);margin-bottom:6px}
+.composer{display:flex; gap:8px; padding:14px; border-top:1px solid var(--border); background:rgba(0,0,0,.25)}
+.textbox{flex:1; display:flex; align-items:center; gap:6px; background:#0d1423; border:1px solid var(--border); border-radius:12px; padding:6px 8px}
+.textbox input{flex:1; border:none; outline:none; background:transparent; color:var(--text)}
+.iconbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;background:#0d1423;color:var(--text);cursor:pointer}
+.iconbtn:hover{background:#111a2c}
+.hidden{display:none}
+small.muted{color:var(--muted)}
+pre.out{background:#0d1423;color:#b8c0cc;border:1px solid var(--border); border-radius:10px; padding:10px; overflow:auto; max-height:300px}
+</style>
+
+<div class="container">
+  <aside class="sidebar">
+    <header>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l4 4-4 4-4-4 4-4zm0 12l4 4-4 4-4-4 4-4z" stroke="#3b82f6" stroke-width="1.2"/></svg>
+      <h1>ARGON</h1><span class="badge">RAG</span>
+    </header>
+    <div class="new" id="newChat">+ New chat</div>
+    <div class="chatlist" id="chatList"></div>
+  </aside>
+
+  <section class="main">
+    <div class="topbar">
+      <label>Model:
+        <select id="model"></select>
+      </label>
+      <span id="status" class="badge">idle</span>
+      <div style="flex:1"></div>
+      <label class="badge">RAG index dir set by server</label>
+    </div>
+
+    <div class="chat" id="chat"></div>
+
+    <div style="padding:10px 14px"><div class="badge">Indexed files</div><ul id="fileList" style="list-style:none;padding-left:0;margin-top:8px"></ul></div>
+
+    <div class="composer">
+      <div class="textbox">
+        <button class="iconbtn" id="attachBtn" title="Upload files for RAG (paperclip)">📎</button>
+        <input id="fileInput" type="file" multiple accept=".txt,.md,.pdf" class="hidden" />
+        <input id="prompt" type="text" placeholder="Type your message...  (use the mic to dictate)" />
+        <button class="iconbtn" id="micBtn" title="Click to start/stop recording">🎤</button>
+      </div>
+      <button id="send">Send</button>
+    </div>
+
+    <div style="padding:10px 14px">
+      <details>
+        <summary><small class="muted">RAG debug console</small></summary>
+        <pre id="out" class="out"></pre>
+      </details>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const out = $("#out");
+const chatEl = $("#chat");
+const modelSel = $("#model");
+const status = $("#status");
+const fileInput = $("#fileInput");
+const attachBtn = $("#attachBtn");
+const sendBtn = $("#send");
+const promptEl = $("#prompt");
+const micBtn = $("#micBtn");
+const chatList = $("#chatList");
+const newChatBtn = $("#newChat");
+
+let convos = JSON.parse(localStorage.getItem("argon.convos")||"[]");
+let currentId = localStorage.getItem("argon.current") || null;
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+function log(...args){ out.textContent += args.join(" ") + "\n"; out.scrollTop = out.scrollHeight; }
+
+function saveState(){
+  localStorage.setItem("argon.convos", JSON.stringify(convos));
+  localStorage.setItem("argon.current", currentId || "");
+}
+
+function makeId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function ensureConvo(){
+  if (!currentId || !convos.find(c=>c.id===currentId)){
+    const id = makeId();
+    const c = { id, title:"New chat", model: modelSel.value||"", messages: [] };
+    convos.unshift(c);
+    currentId = id;
+    saveState();
+  }
+}
+
+function renderChatList(){
+  chatList.innerHTML = "";
+  convos.forEach(c=>{
+    const div = document.createElement("div");
+    div.className = "chatitem" + (c.id===currentId?" active":"");
+    div.textContent = c.title || "Untitled";
+    div.onclick = ()=>{ currentId=c.id; saveState(); renderChatList(); renderChat(); };
+    chatList.appendChild(div);
+  });
+}
+
+function renderChat(){
+  const convo = convos.find(c=>c.id===currentId);
+  chatEl.innerHTML = "";
+  if (!convo) return;
+  convo.messages.forEach(m=>{
+    const wrap = document.createElement("div");
+    wrap.className = "msg "+m.role;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = m.role.toUpperCase();
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = m.content;
+    const left = document.createElement("div");
+    left.appendChild(meta);
+    left.appendChild(bubble);
+    wrap.appendChild(left);
+    chatEl.appendChild(wrap);
+  });
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+// --- RAG: list files
+async function refreshFiles(){
+  try{
+    const r = await fetch("/rag/files");
+    const j = await r.json();
+    const ul = document.getElementById("fileList");
+    ul.innerHTML = "";
+    if (j?.files?.length){
+      for (const it of j.files){
+        const li = document.createElement("li");
+        li.className = "badge";
+        li.style.display = "inline-block";
+        li.style.marginRight = "6px";
+        li.style.marginBottom = "6px";
+        li.textContent = it.filename + " (" + Math.round((it.size||0)/1024) + " KB)";
+        ul.appendChild(li);
+      }
+    } else {
+      document.getElementById("fileList").innerHTML = "<span class='badge'>No files indexed yet</span>";
+    }
+  }catch(e){ log("files error:", e); }
+}
+
+// --- Models: normalize a few shapes and show
+async function fetchModels(){
+  modelSel.innerHTML = "<option>Loading...</option>";
+  try{
+    const r = await fetch("/models");
+    const j = await r.json();
+    log("GET /models ->", JSON.stringify(j));
+    let items = [];
+    if (Array.isArray(j)) {
+      items = j.map(name => ({ name }));
+    } else if (Array.isArray(j?.models)) {
+      items = j.models.map(m => typeof m === "string" ? ({ name: m }) : m);
+    } else if (Array.isArray(j?.data)) {
+      items = j.data.map(m => typeof m === "string" ? ({ name: m }) : m);
+    } else if (j?.model && typeof j.model === "string") {
+      items = [{ name: j.model }];
+    } else {
+      const cand = Object.values(j).find(v => Array.isArray(v));
+      if (cand) items = cand.map(m => typeof m === "string" ? ({ name: m }) : m);
+    }
+    if (!items.length) {
+      modelSel.innerHTML = '<option value="">(no chat models found)</option>';
+      log("No chat models returned. If Ollama is running, ensure at least one chat model is installed: ollama pull llama3.1");
+      return;
+    }
+    modelSel.innerHTML = '<option value="">— Select a model —</option>' +
+      items.map(m=>`<option value="${m.name}">${m.name}</option>`).join("");
+  }catch(e){
+    modelSel.innerHTML = '<option value="">(failed to load)</option>';
+    log("models error:", e);
+  }
+}
+
+function addMessage(role, content){
+  ensureConvo();
+  const convo = convos.find(c=>c.id===currentId);
+  convo.messages.push({ role, content });
+  if ((role==="user") && (!convo.title || convo.title==="New chat")){
+    convo.title = content.slice(0,42);
+  }
+  if (convo.model !== modelSel.value) convo.model = modelSel.value;
+  saveState();
+  renderChat();
+}
+
+async function streamChat(){
+  const convo = convos.find(c=>c.id===currentId);
+  if (!convo || !modelSel.value){ alert("Pick a model first."); return; }
+  const res = await fetch("/chat", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ model: modelSel.value, messages: convo.messages })
+  });
+  if (!res.ok){ log("chat HTTP", res.status); return; }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  addMessage("assistant","");
+  const aIdx = convos.findIndex(c=>c.id===currentId);
+  const msgIdx = convos[aIdx].messages.length-1;
+
+  while(true){
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream:true });
+    let nl;
+    while ((nl = buffer.indexOf("\n")) >= 0){
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl+1);
+      if(!line) continue;
+      try{
+        const obj = JSON.parse(line);
+        if (obj.type === "token"){
+          convos[aIdx].messages[msgIdx].content += obj.token;
+          renderChat();
+        } else if (obj.type === "done"){
+          // finished
+        }
+      }catch(e){ /* ignore */ }
+    }
+  }
+  saveState();
+}
+
+// RAG upload
+attachBtn.onclick = ()=> fileInput.click();
+fileInput.onchange = async () => {
+  if (!fileInput.files?.length) return;
+  const fd = new FormData();
+  for (const f of fileInput.files) fd.append("file", f);
+  try {
+    const r = await fetch("/rag/upload", { method:"POST", body: fd });
+    const j = await r.json().catch(()=>null);
+    log("upload:", JSON.stringify(j, null, 2));
+    alert("RAG files indexed. You can ask questions that reference them now.");
+    refreshFiles();
+  } catch(err) {
+    log("upload failed:", err);
+    alert("Upload failed. Check server logs.");
+  } finally {
+    fileInput.value = "";
+  }
+};
+
+sendBtn.onclick = async () => {
+  const t = promptEl.value.trim();
+  if (!t) return;
+  addMessage("user", t);
+  promptEl.value = "";
+  renderChat();
+  await streamChat();
+};
+
+// init
+fetchModels().then(()=>{
+  ensureConvo();
+  renderChatList();
+  renderChat();
+  refreshFiles();
+});
+</script>

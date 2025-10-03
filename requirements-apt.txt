@@ -1,0 +1,15 @@
+# System packages (Ubuntu/Debian) you likely need before installing Node/Python deps
+# - Required for node-canvas (used by pdf-table-extractor fallback):
+build-essential
+libcairo2-dev
+libpango1.0-dev
+libjpeg-dev
+libgif-dev
+librsvg2-dev
+
+# - For PDF/DOC/DOCX processors:
+ghostscript           # used by camelot
+default-jre           # required by tabula-py
+tesseract-ocr         # pytesseract runtime
+libtesseract-dev      # pytesseract headers
+libreoffice           # optional: DOC -> DOCX conversion in rag.ts

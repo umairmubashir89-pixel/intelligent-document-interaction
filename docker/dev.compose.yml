@@ -1,0 +1,6 @@
+services:
+  server:
+    build: ../apps/server
+    ports:
+      - "8787:8787"
+    environment: []

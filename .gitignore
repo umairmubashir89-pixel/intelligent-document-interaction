@@ -1,0 +1,27 @@
+# Dependencies & envs
+node_modules/
+.venv/
+.env
+*.env
+
+# Build outputs & caches
+dist/
+build/
+*.log
+
+# RAG data (generated/large)
+apps/server/data/rag/
+
+# Big binaries / installers / archives
+pre reqs/
+*.exe
+*.msi
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.iso
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
